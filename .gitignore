@@ -1,0 +1,17 @@
+# Environment config (may contain IPs, SSH keys)
+.env
+
+# Temporary files
+*.tmp
+/tmp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/

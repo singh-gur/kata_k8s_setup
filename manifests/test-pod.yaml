@@ -1,0 +1,27 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kata-test
+  namespace: default
+  labels:
+    app: kata-test
+spec:
+  runtimeClassName: kata
+  containers:
+    - name: test
+      image: busybox:stable
+      command:
+        - sh
+        - -c
+        - |
+          echo "=== Kata Containers Runtime Test ==="
+          echo "Hostname: $(hostname)"
+          echo "Kernel:   $(uname -r)"
+          echo "PID 1:    $(cat /proc/1/cmdline | tr '\0' ' ')"
+          echo ""
+          echo "If the kernel version differs from the host, Kata is working!"
+          echo "Kata uses its own guest kernel inside a lightweight VM."
+          echo "=== Test Complete ==="
+          sleep 10
+  restartPolicy: Never
