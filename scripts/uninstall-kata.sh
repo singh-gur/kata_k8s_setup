@@ -27,7 +27,7 @@ main() {
     echo "  1. Delete the test pod (if exists)"
     echo "  2. Run kata-cleanup DaemonSet on all worker nodes"
     echo "  3. Remove kata-deploy and kata-cleanup DaemonSets"
-    echo "  4. Remove RuntimeClasses (kata, kata-qemu, kata-clh)"
+    echo "  4. Remove the kata RuntimeClass"
     echo "  5. Remove node labels"
     echo ""
 

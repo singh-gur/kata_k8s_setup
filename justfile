@@ -30,9 +30,17 @@ prereq-check-all:
 install:
     @bash scripts/install-kata.sh
 
+# Install one node at a time with health checks between each (safer for production)
+install-staged:
+    @bash scripts/install-kata.sh --staged
+
 # Install with dry-run (shows what would happen without making changes)
 install-dry-run:
     @DRY_RUN=true bash scripts/install-kata.sh
+
+# Staged install dry-run
+install-staged-dry-run:
+    @DRY_RUN=true bash scripts/install-kata.sh --staged
 
 # ---------------------------------------------------------------------------
 # Verification

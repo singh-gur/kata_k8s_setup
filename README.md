@@ -26,7 +26,9 @@ just prereq-check
 just install-dry-run
 
 # 4. Install Kata Containers
-just install
+just install              # all workers at once
+# OR
+just install-staged       # one node at a time (recommended for production clusters)
 
 # 5. Verify it works
 just verify
@@ -48,7 +50,7 @@ just verify
 └── manifests/
     ├── kata-deploy.yaml            # kata-deploy DaemonSet (version templated)
     ├── kata-cleanup.yaml           # Cleanup DaemonSet for uninstall
-    ├── kata-runtimeclass.yaml      # RuntimeClasses: kata, kata-qemu, kata-clh
+    ├── kata-runtimeclass.yaml      # kata RuntimeClass
     └── test-pod.yaml               # Test pod that proves Kata is active
 ```
 
@@ -83,8 +85,10 @@ just --list
 |---|---|
 | `just prereq-check` | Check KVM, kernel, memory on all worker nodes via SSH. Read-only. |
 | `just prereq-check-all` | Same as above but includes control-plane nodes. |
-| `just install` | Install Kata on the cluster (labels nodes, applies manifests, waits for rollout). |
+| `just install` | Install Kata on all workers at once. |
+| `just install-staged` | Install one node at a time with health checks between each. |
 | `just install-dry-run` | Preview the install without making any changes. |
+| `just install-staged-dry-run` | Preview the staged install. |
 | `just verify` | Full verification: checks RuntimeClasses, DaemonSet, and deploys a test pod. |
 | `just verify-quick` | Verification without deploying a test pod. |
 | `just uninstall` | Completely remove Kata (runs cleanup DaemonSet, removes all resources). |
@@ -121,13 +125,45 @@ just --list
 
 ### Install flow
 
-1. **Label worker nodes** with `katacontainers.io/kata-runtime=true`
-2. **Apply RuntimeClasses** -- creates `kata`, `kata-qemu`, and `kata-clh` RuntimeClasses that map to the corresponding containerd handlers
-3. **Deploy kata-deploy DaemonSet** -- runs on every worker node, where it:
+The kata-deploy DaemonSet has a `nodeSelector` for `katacontainers.io/kata-runtime=true`, so it only runs on explicitly labeled nodes. This is what makes the staged rollout possible -- the DaemonSet exists in the cluster but only targets nodes you've opted in.
+
+**Default mode** (`just install`) -- labels all workers, then deploys:
+
+1. **Label all worker nodes** with `katacontainers.io/kata-runtime=true`
+2. **Apply RuntimeClass** -- creates the `kata` RuntimeClass
+3. **Deploy kata-deploy DaemonSet** -- schedules on all labeled workers, where it:
    - Downloads Kata binaries into `/opt/kata/`
    - Patches the k3s containerd config (`config.toml.tmpl`) to register Kata runtime handlers
    - Stays running to maintain the configuration
-4. **Wait for rollout** -- the script polls until all DaemonSet pods report ready
+4. **Wait for rollout** -- polls until all DaemonSet pods report ready
+
+**Staged mode** (`just install-staged`) -- one node at a time:
+
+1. **Apply RuntimeClasses** (safe, no impact on existing pods)
+2. **Deploy kata-deploy DaemonSet** (won't schedule anywhere yet -- no nodes are labeled)
+3. **For each worker node:**
+   a. Check node health (verifies existing pods are running)
+   b. Label the node (triggers kata-deploy to schedule on it)
+   c. Wait for the kata-deploy pod on that specific node to become ready
+   d. Verify node health again (checks nothing was disrupted)
+   e. Prompt before continuing to the next node
+
+If kata-deploy fails on a node, the staged rollout stops and gives you the option to skip that node or abort entirely. Remaining nodes are untouched. You can also pause mid-rollout and resume later -- already-labeled nodes will be skipped.
+
+```
+$ just install-staged
+============================================
+  Node 1/4: node/worker-01
+============================================
+[OK]    worker-01: all existing pods healthy
+
+  Labeling node/worker-01 with katacontainers.io/kata-runtime=true
+
+[OK]    kata-deploy pod on worker-01 is ready
+[OK]    worker-01: all existing pods healthy
+[OK]    Node worker-01 done (1/4)
+Proceed to next node? [Y/n]
+```
 
 ### Verification
 
@@ -147,6 +183,13 @@ Pod kernel:   6.1.62                  <-- Kata guest kernel
 
 ## Safety features
 
+**Staged rollout** -- `just install-staged` rolls out to one node at a time. Between each node it:
+- Checks existing pod health before and after labeling
+- Waits for kata-deploy to succeed on that specific node
+- Detects errors early (CrashLoopBackOff, ImagePullBackOff) and stops
+- Prompts before moving to the next node
+- Can be paused and resumed (already-labeled nodes are skipped)
+
 **Dry-run mode** -- Every script supports `DRY_RUN=true`. The justfile has dedicated `*-dry-run` recipes. In this mode:
 - `kubectl apply` runs with `--dry-run=client`
 - SSH commands are logged but not executed
@@ -159,6 +202,8 @@ Pod kernel:   6.1.62                  <-- Kata guest kernel
 - Respects `DRY_RUN` mode
 
 **Confirmation prompts** -- Both `install` and `uninstall` require an explicit `y/N` confirmation before proceeding.
+
+**Label-gated DaemonSet** -- The kata-deploy DaemonSet uses a `nodeSelector` for `katacontainers.io/kata-runtime=true`. It will never run on a node you haven't explicitly labeled, and removing the label from a node will cause the DaemonSet pod to be evicted from it.
 
 **Read-only prerequisite checks** -- `just prereq-check` only reads from nodes. It checks:
 - OS version
@@ -200,13 +245,7 @@ spec:
       image: my-app:latest
 ```
 
-Three RuntimeClasses are available:
-
-| RuntimeClass | Hypervisor | Notes |
-|---|---|---|
-| `kata` | QEMU (default) | Most compatible, broadest feature support. |
-| `kata-qemu` | QEMU | Explicit alias for the QEMU hypervisor. |
-| `kata-clh` | Cloud Hypervisor | Lighter weight, faster boot, fewer features. |
+This creates a single `kata` RuntimeClass that uses the QEMU hypervisor -- the most stable and broadly compatible option.
 
 ## Troubleshooting
 

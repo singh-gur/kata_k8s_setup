@@ -51,7 +51,10 @@ spec:
         app: kata-deploy
     spec:
       serviceAccountName: kata-deploy-sa
-      # Only deploy to worker nodes (skip control-plane)
+      # Only deploy to nodes explicitly labeled for kata
+      nodeSelector:
+        katacontainers.io/kata-runtime: "true"
+      # Additionally skip control-plane nodes as a safety net
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

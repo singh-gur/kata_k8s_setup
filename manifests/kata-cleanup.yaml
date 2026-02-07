@@ -18,6 +18,9 @@ spec:
         app: kata-cleanup
     spec:
       serviceAccountName: kata-deploy-sa
+      # Run cleanup on all nodes that had kata installed
+      nodeSelector:
+        katacontainers.io/kata-runtime: "true"
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
