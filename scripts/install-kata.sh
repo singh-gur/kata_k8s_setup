@@ -183,14 +183,41 @@ install_staged() {
         exit 1
     fi
 
-    # Convert to array
+    # Convert to array and separate already-labeled from pending nodes
     local nodes_array=()
+    local pending_array=()
+    local skipped_array=()
     for node in $worker_nodes; do
         nodes_array+=("$node")
+        local node_name="${node#node/}"
+        local has_label
+        has_label=$(kubectl get node "$node_name" -o jsonpath='{.metadata.labels.katacontainers\.io/kata-runtime}' 2>/dev/null || echo "")
+        if [[ "$has_label" == "true" ]]; then
+            skipped_array+=("$node")
+        else
+            pending_array+=("$node")
+        fi
     done
 
     local total=${#nodes_array[@]}
-    log_info "Staged rollout: $total worker node(s) to process"
+    local pending=${#pending_array[@]}
+    local skipped=${#skipped_array[@]}
+
+    log_info "Staged rollout: $total worker node(s) total, $pending pending, $skipped already labeled"
+
+    if [[ $skipped -gt 0 ]]; then
+        log_info "Skipping already-labeled nodes:"
+        for node in "${skipped_array[@]}"; do
+            log_ok "  $node (already labeled)"
+        done
+    fi
+
+    if [[ $pending -eq 0 ]]; then
+        echo ""
+        log_ok "All worker nodes are already labeled. Nothing to do."
+        log_info "Run 'just verify' to check the installation, or 'just status' for an overview."
+        return 0
+    fi
     echo ""
 
     # Step 1: Apply RuntimeClasses (safe, no impact)
@@ -198,26 +225,26 @@ install_staged() {
     apply_runtimeclasses
     echo ""
 
-    # Step 2: Apply DaemonSet (won't schedule anywhere yet -- no nodes are labeled)
-    log_info "Step 2: Deploying kata-deploy DaemonSet (will not schedule until nodes are labeled)..."
+    # Step 2: Apply DaemonSet (won't schedule on unlabeled nodes)
+    log_info "Step 2: Deploying kata-deploy DaemonSet (will only schedule on labeled nodes)..."
     apply_daemonset
     echo ""
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY-RUN] Would roll out to each node one at a time:"
-        for node in "${nodes_array[@]}"; do
+        log_info "[DRY-RUN] Would roll out to each pending node one at a time:"
+        for node in "${pending_array[@]}"; do
             log_info "  - $node"
         done
         return 0
     fi
 
-    # Step 3: Label nodes one at a time
+    # Step 3: Label pending nodes one at a time
     local i=0
-    for node in "${nodes_array[@]}"; do
+    for node in "${pending_array[@]}"; do
         (( i++ ))
         echo ""
         echo "============================================"
-        log_info "Node $i/$total: $node"
+        log_info "Node $i/$pending: $node"
         echo "============================================"
 
         # Extract short node name for field-selector (remove "node/" prefix)
@@ -245,7 +272,7 @@ install_staged() {
             echo ""
             read -rp "Continue to next node anyway? [y/N] " cont
             if [[ "$cont" != "y" && "$cont" != "Y" ]]; then
-                log_info "Stopped. ${i} of ${total} nodes processed."
+                log_info "Stopped. $i of $pending pending nodes processed."
                 exit 1
             fi
         fi
@@ -255,12 +282,12 @@ install_staged() {
         verify_node_health "$node_name"
 
         # Prompt before continuing to next node (skip for the last one)
-        if (( i < total )); then
+        if (( i < pending )); then
             echo ""
-            log_ok "Node $node_name done ($i/$total)"
+            log_ok "Node $node_name done ($i/$pending)"
             read -rp "Proceed to next node? [Y/n] " next
             if [[ "$next" == "n" || "$next" == "N" ]]; then
-                log_info "Paused. $i of $total nodes processed."
+                log_info "Paused. $i of $pending pending nodes processed."
                 log_info "Run 'just install-staged' again to continue (already-labeled nodes will be skipped)."
                 exit 0
             fi
@@ -311,12 +338,14 @@ main() {
         log_info "This will roll out Kata Containers one node at a time:"
         echo "  1. Apply RuntimeClasses (safe, no impact on existing pods)"
         echo "  2. Deploy kata-deploy DaemonSet (won't run until nodes are labeled)"
-        echo "  3. For each of the $node_count worker node(s):"
+        echo "  3. For each unlabeled worker node (of $node_count total):"
         echo "     a. Check node health"
         echo "     b. Label the node (triggers kata-deploy on that node)"
         echo "     c. Wait for kata-deploy to complete on that node"
         echo "     d. Verify node health"
         echo "     e. Prompt before continuing to the next node"
+        echo ""
+        echo "  Already-labeled nodes are skipped (safe to resume after a pause)."
     else
         log_info "This will:"
         echo "  1. Label all $node_count worker node(s) for kata deployment"
