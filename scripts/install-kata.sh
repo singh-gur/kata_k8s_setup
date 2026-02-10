@@ -116,7 +116,8 @@ verify_node_health() {
     local not_running
     not_running=$(kubectl get pods --all-namespaces --field-selector "spec.nodeName=${node_name}" \
         -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' 2>/dev/null \
-        | grep -cvE "^(Running|Succeeded)$" || echo "0")
+        | grep -cvE "^(Running|Succeeded)$" || true)
+    not_running="${not_running:-0}"
 
     if [[ "$not_running" -gt 0 ]]; then
         log_warn "$node_name has $not_running pod(s) not in Running/Succeeded state"
@@ -241,7 +242,7 @@ install_staged() {
     # Step 3: Label pending nodes one at a time
     local i=0
     for node in "${pending_array[@]}"; do
-        (( i++ ))
+        (( ++i ))
         echo ""
         echo "============================================"
         log_info "Node $i/$pending: $node"

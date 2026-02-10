@@ -33,69 +33,29 @@ spec:
         - name: kube-kata-cleanup
           image: quay.io/kata-containers/kata-deploy:${KATA_VERSION}
           imagePullPolicy: IfNotPresent
-          command:
-            - bash
-            - -c
-            - |
-              /opt/kata-artifacts/scripts/kata-deploy.sh cleanup
-              echo "Cleanup complete, sleeping..."
-              sleep infinity
+          # 3.26.0+ uses a Rust binary instead of bash scripts
+          command: ["/usr/bin/kata-deploy", "cleanup"]
           env:
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            - name: RUNTIME
-              value: "containerd"
-            - name: CONTAINERD_SOCKET_PATH
-              value: "/run/k3s/containerd/containerd.sock"
-            - name: CONTAINERD_CONFIG_PATH
-              value: "/var/lib/rancher/k3s/agent/etc/containerd/config.toml.tmpl"
+            - name: DEBUG
+              value: "false"
             - name: HOST_OS
               value: "ubuntu"
           securityContext:
             privileged: true
           volumeMounts:
-            - name: kata-artifacts
-              mountPath: /opt/kata/
-            - name: host-root
+            - name: containerd-conf
+              mountPath: /etc/containerd/
+            - name: host
               mountPath: /host/
-            - name: dbus
-              mountPath: /var/run/dbus
-            - name: systemd
-              mountPath: /run/systemd
-            - name: containerd-config
-              mountPath: /var/lib/rancher/k3s/agent/etc/containerd/
-            - name: containerd-socket
-              mountPath: /run/k3s/containerd/
-            - name: local-bin
-              mountPath: /opt/kata-artifacts/
       volumes:
-        - name: kata-artifacts
+        - name: containerd-conf
           hostPath:
-            path: /opt/kata/
-            type: DirectoryOrCreate
-        - name: host-root
+            # k3s containerd config path
+            path: /var/lib/rancher/k3s/agent/etc/containerd/
+        - name: host
           hostPath:
             path: /
-            type: Directory
-        - name: dbus
-          hostPath:
-            path: /var/run/dbus
-            type: DirectoryOrCreate
-        - name: systemd
-          hostPath:
-            path: /run/systemd
-            type: DirectoryOrCreate
-        - name: containerd-config
-          hostPath:
-            path: /var/lib/rancher/k3s/agent/etc/containerd/
-            type: DirectoryOrCreate
-        - name: containerd-socket
-          hostPath:
-            path: /run/k3s/containerd/
-            type: DirectoryOrCreate
-        - name: local-bin
-          hostPath:
-            path: /opt/kata-artifacts/
-            type: DirectoryOrCreate

@@ -68,10 +68,10 @@ safe_ssh() {
     fi
     ssh_cmd+=("${SSH_USER}@${host}")
 
-    log_info "SSH → ${SSH_USER}@${host}: ${cmd}"
+    log_info "SSH → ${SSH_USER}@${host}: ${cmd}" >&2
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        log_warn "[DRY-RUN] Would execute: ${ssh_cmd[*]} ${cmd}"
+        log_warn "[DRY-RUN] Would execute: ${ssh_cmd[*]} ${cmd}" >&2
         return 0
     fi
 
@@ -79,12 +79,12 @@ safe_ssh() {
     if [[ "$allow_write" != "true" ]]; then
         local dangerous_patterns="(install|remove|rm |mv |cp |dd |mkfs|mount|umount|systemctl|apt|yum|dnf|snap|chmod|chown|tee |>>|> )"
         if echo "$cmd" | grep -qEi "$dangerous_patterns"; then
-            log_warn "This command may modify the remote system:"
-            echo "  Host:    ${host}"
-            echo "  Command: ${cmd}"
+            log_warn "This command may modify the remote system:" >&2
+            echo "  Host:    ${host}" >&2
+            echo "  Command: ${cmd}" >&2
             read -rp "Proceed? [y/N] " confirm
             if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-                log_warn "Skipped."
+                log_warn "Skipped." >&2
                 return 1
             fi
         fi
